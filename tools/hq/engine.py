@@ -155,9 +155,9 @@ def lighting_rig():
     lights = [
         # x, y, z, radius, r, g, b, intensity
         (-5.0, 8.0, 9.5, 3.4, 1.00, 0.94, 0.86, 7.2),    # key
-        (7.5, 0.5, 7.0, 4.5, 0.58, 0.76, 1.00, 2.0),     # fill
+        (7.5, 0.5, 7.0, 4.5, 0.58, 0.76, 1.00, 2.7),     # fill
         (0.0, 4.5, -9.0, 3.6, 0.45, 0.95, 0.95, 3.6),    # rim / backlight
-        (0.0, -7.0, 4.0, 5.0, 0.24, 0.50, 0.62, 1.1),    # bounce
+        (0.0, -7.0, 4.0, 5.0, 0.24, 0.50, 0.62, 1.4),    # bounce
     ]
     return np.array(lights, dtype="f4").reshape(-1)
 
@@ -302,20 +302,32 @@ def aces(x):
     return np.clip((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0)
 
 
-def post_process(hdr, exposure=1.0, bloom=0.30, vignette=0.32, grain=0.0025, seed=7):
-    """Filmic finish: highlight bloom, ACES tonemap, vignette and a touch of
-    grain so flat areas do not band."""
+def post_process(hdr, exposure=1.14, bloom=0.48, vignette=0.32, grain=0.0022,
+                 saturation=1.24, contrast=1.07, seed=7):
+    """Filmic finish tuned for a punchy, toy-bright animation look: highlight
+    bloom, ACES tonemap, saturation lift, an S-curve for contrast, vignette
+    and a touch of grain so flat areas do not band."""
     img = hdr * exposure
     if bloom > 0:
-        bright = np.maximum(img - 1.0, 0.0)
+        bright = np.maximum(img - 0.85, 0.0)
         glow = _blur(bright, max(2.0, img.shape[1] / 220.0))
-        glow += _blur(bright, max(6.0, img.shape[1] / 70.0)) * 0.6
+        glow += _blur(bright, max(6.0, img.shape[1] / 70.0)) * 0.7
         img = img + glow * bloom
 
     ldr = aces(img)
     ldr = np.clip(ldr, 0.0, 1.0) ** (1.0 / 2.2)
 
+    if saturation != 1.0:
+        lum = (ldr * np.array([0.2126, 0.7152, 0.0722], dtype="f4")).sum(axis=2, keepdims=True)
+        ldr = np.clip(lum + (ldr - lum) * saturation, 0.0, 1.0)
+
+    if contrast != 1.0:
+        # pivot around mid grey, then a gentle smoothstep for filmic shoulders
+        ldr = np.clip((ldr - 0.5) * contrast + 0.5, 0.0, 1.0)
+        ldr = ldr * 0.75 + (ldr * ldr * (3.0 - 2.0 * ldr)) * 0.25
+
     if vignette > 0:
+
         h, w = ldr.shape[:2]
         yy, xx = np.mgrid[0:h, 0:w]
         nx = (xx / (w - 1) - 0.5) * 2.0
