@@ -1,0 +1,7 @@
+# Generated render artifacts (large, reproducible via render.py + finish.py)
+Body-Explorers-Source-Package/silent.mp4
+Body-Explorers-Source-Package/*.wav
+Body-Explorers-Source-Package/preview-*.jpg
+Body-Explorers-Source-Package/Body-Explorers-E01-The-Great-Oxygen-Delivery.mp4
+tools/softgl/libsoftraster.so
+__pycache__/
