@@ -65,10 +65,11 @@ def render_frame(render_mod, i, t, W, H, spp, bounces, aperture, denoise, exposu
 
 def encode_scene(render_mod, i, args, out_path):
     W, H = args.width, args.height
+    tmp_path = Path(str(out_path) + ".part")
     cmd = [ffmpeg(), "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
            "-s", f"{W}x{H}", "-r", str(args.fps), "-i", "-", "-an",
            "-c:v", "libx264", "-preset", "slow", "-crf", str(args.crf),
-           "-pix_fmt", "yuv420p", str(out_path)]
+           "-pix_fmt", "yuv420p", str(tmp_path)]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
     nframes = int(args.fps * 15)
     t0 = time.time()
@@ -86,6 +87,7 @@ def encode_scene(render_mod, i, args, out_path):
     proc.stdin.close()
     if proc.wait() != 0:
         raise SystemExit(f"ffmpeg failed on scene {i}")
+    tmp_path.replace(out_path)
     print(f"scene {i + 1:02} done in {(time.time() - t0) / 60:.1f} min -> {out_path}", flush=True)
 
 

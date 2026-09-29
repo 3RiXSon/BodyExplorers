@@ -376,29 +376,34 @@ static V3 direct(V3 p, V3 n, V3 v, const Inst *m, Rng *r, int cheap) {
     for (int i = 0; i < nl; i++) {
         const Light *L = &g_lights[i];
         V3 lc = v3(L->pos[0], L->pos[1], L->pos[2]);
-        /* sample a point on the hemisphere of the light facing p */
-        V3 toP = norm(sub(p, lc));
-        V3 sp = cos_hemi(toP, r);
-        V3 lp = add(lc, scale(sp, L->radius));
-        V3 dl = sub(lp, p);
-        float dist2 = dot(dl, dl);
-        float dist = sqrtf(dist2);
-        V3 ldir = scale(dl, 1.f / dist);
+        V3 toL = sub(lc, p);
+        float dist = len(toL);
+        if (dist < 1e-4f) continue;
+        V3 cdir = scale(toL, 1.f / dist);
+
+        /* Solid-angle (cone) sampling of the sphere light. Sampling the light's
+         * *area* makes big soft sources very noisy; sampling the cone they
+         * subtend keeps penumbrae soft while cutting variance dramatically. */
+        float sin_max = minf(L->radius / dist, 0.9999f);
+        float cos_max = sqrtf(maxf(0.f, 1.f - sin_max * sin_max));
+        float u1 = rnd(r), u2 = rnd(r);
+        float cos_t = 1.f - u1 * (1.f - cos_max);
+        float sin_t = sqrtf(maxf(0.f, 1.f - cos_t * cos_t));
+        float phi = 6.2831853f * u2;
+        V3 tb, bb; onb(cdir, &tb, &bb);
+        V3 ldir = norm(add(add(scale(tb, cosf(phi) * sin_t), scale(bb, sinf(phi) * sin_t)),
+                           scale(cdir, cos_t)));
 
         float ndl = dot(n, ldir);
         float wrap = m->sss;
         float diff_term = wrap > 0.f ? maxf((ndl + wrap) / (1.f + wrap), 0.f) : maxf(ndl, 0.f);
         if (diff_term <= 0.f && ndl <= 0.f) continue;
 
-        float cos_l = maxf(dot(sp, scale(ldir, -1.f)), 0.f);
-        if (cos_l <= 0.f) continue;
-        /* pdf of uniform area sampling over the facing hemisphere */
-        float area = 6.2831853f * L->radius * L->radius;
-        float g = cos_l * area / maxf(dist2, 1e-4f);
-
         Hit sh;
         if (trace(add(p, scale(n, 1e-3f)), ldir, dist - L->radius * 0.5f, &sh, 1)) continue;
 
+        /* 1/pdf for uniform cone sampling */
+        float g = 6.2831853f * (1.f - cos_max);
         V3 lcol = scale(v3(L->color[0], L->color[1], L->color[2]), L->intensity * g);
         V3 kd = scale(diff_alb, diff_term / 3.14159265f);
         out = add(out, mul(kd, lcol));
@@ -407,7 +412,6 @@ static V3 direct(V3 p, V3 n, V3 v, const Inst *m, Rng *r, int cheap) {
             /* Representative-point specular: deterministic direction to the
              * light centre, roughness widened by its angular radius. Keeps
              * glossy highlights soft and, crucially, noise free. */
-            V3 cdir = norm(sub(lc, p));
             float ang = atanf(L->radius / maxf(dist, 1e-3f));
             float rr = clampf(m->rough + ang * 0.55f, 0.03f, 1.f);
             float ndl_c = maxf(dot(n, cdir), 0.f);

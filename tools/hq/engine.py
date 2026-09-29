@@ -154,10 +154,10 @@ def lighting_rig():
     three-point rig, all as sphere area lights so shadows have real penumbrae."""
     lights = [
         # x, y, z, radius, r, g, b, intensity
-        (-5.0, 8.0, 9.5, 3.4, 1.00, 0.94, 0.86, 7.2),    # key
-        (7.5, 0.5, 7.0, 4.5, 0.58, 0.76, 1.00, 2.7),     # fill
-        (0.0, 4.5, -9.0, 3.6, 0.45, 0.95, 0.95, 3.6),    # rim / backlight
-        (0.0, -7.0, 4.0, 5.0, 0.24, 0.50, 0.62, 1.4),    # bounce
+        (-5.0, 8.0, 9.5, 5.4, 1.00, 0.96, 0.90, 6.0),    # key: big source, soft edges
+        (7.5, 0.8, 7.5, 6.4, 0.74, 0.86, 1.00, 3.6),     # fill: keeps shadows open
+        (0.0, 4.5, -9.0, 4.4, 0.58, 0.96, 0.96, 2.6),    # rim / backlight
+        (0.0, -7.0, 4.0, 6.5, 0.46, 0.66, 0.76, 2.0),    # bounce from below
     ]
     return np.array(lights, dtype="f4").reshape(-1)
 
@@ -167,10 +167,11 @@ def _lin(c):
     return np.power(np.array(c, dtype="f8"), 2.2).astype("f4")
 
 
-# Deep navy studio environment matching the series' background plate.
-SKY_TOP = _lin([0.030, 0.070, 0.120])
-SKY_HOR = _lin([0.048, 0.105, 0.155])
-SKY_BOT = _lin([0.010, 0.026, 0.045])
+# Bright, airy studio environment: a soft daylight dome rather than a dark
+# stage, so ambient light fills the shadows and the world feels friendly.
+SKY_TOP = _lin([0.105, 0.185, 0.270])
+SKY_HOR = _lin([0.175, 0.265, 0.340])
+SKY_BOT = _lin([0.070, 0.115, 0.150])
 
 
 def setup_environment(sky_gain=1.0):
@@ -253,8 +254,8 @@ def render_hdr(draws, vp, eye, W, H, spp=9, bounces=1, aperture=0.055,
                   _p(color), _p(albedo), _p(normal), _p(depth))
     if denoise:
         LIB.hq_denoise_mt(_p(color), _p(albedo), _p(normal), _p(depth), W, H,
-                          4, ctypes.c_float(64.0), ctypes.c_float(0.30),
-                          ctypes.c_float(1.10), threads)
+                          5, ctypes.c_float(64.0), ctypes.c_float(0.30),
+                          ctypes.c_float(1.40), threads)
     del keep
     return color
 
@@ -302,14 +303,14 @@ def aces(x):
     return np.clip((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0)
 
 
-def post_process(hdr, exposure=1.14, bloom=0.48, vignette=0.32, grain=0.0022,
-                 saturation=1.24, contrast=1.07, seed=7):
-    """Filmic finish tuned for a punchy, toy-bright animation look: highlight
-    bloom, ACES tonemap, saturation lift, an S-curve for contrast, vignette
-    and a touch of grain so flat areas do not band."""
+def post_process(hdr, exposure=1.04, bloom=0.17, vignette=0.14, grain=0.0018,
+                 saturation=1.12, contrast=0.97, lift=0.055, seed=7):
+    """Filmic finish tuned for a bright, soft, daylight look: gentle highlight
+    bloom, ACES tonemap, a light saturation lift, lifted shadows and only a
+    whisper of vignette and grain."""
     img = hdr * exposure
     if bloom > 0:
-        bright = np.maximum(img - 0.85, 0.0)
+        bright = np.maximum(img - 1.35, 0.0)
         glow = _blur(bright, max(2.0, img.shape[1] / 220.0))
         glow += _blur(bright, max(6.0, img.shape[1] / 70.0)) * 0.7
         img = img + glow * bloom
@@ -322,9 +323,11 @@ def post_process(hdr, exposure=1.14, bloom=0.48, vignette=0.32, grain=0.0022,
         ldr = np.clip(lum + (ldr - lum) * saturation, 0.0, 1.0)
 
     if contrast != 1.0:
-        # pivot around mid grey, then a gentle smoothstep for filmic shoulders
         ldr = np.clip((ldr - 0.5) * contrast + 0.5, 0.0, 1.0)
-        ldr = ldr * 0.75 + (ldr * ldr * (3.0 - 2.0 * ldr)) * 0.25
+
+    if lift > 0:
+        # Raise the toe so shadows read as airy rather than crushing to black.
+        ldr = ldr * (1.0 - lift) + lift * (1.0 - (1.0 - ldr) ** 2)
 
     if vignette > 0:
 
